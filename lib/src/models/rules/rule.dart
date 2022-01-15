@@ -19,6 +19,8 @@ abstract class Rule {
 
   void validateArgs(int? len, Object? data, Attribute? attribute);
 
+  /// Applies heuristic rule to an operation on a [document] and returns
+  /// resulting [Delta].
   Delta? applyRule(Delta document, int index,
       {int? len, Object? data, Attribute? attribute});
 
@@ -41,11 +43,13 @@ class Rules {
     const PreserveLineStyleOnSplitRule(),
     const ResetLineFormatOnNewLineRule(),
     const AutoFormatLinksRule(),
+    const AutoFormatMultipleLinksRule(),
     const PreserveInlineStylesRule(),
     const CatchAllInsertRule(),
     const EnsureEmbedLineRule(),
     const PreserveLineStyleOnMergeRule(),
     const CatchAllDeleteRule(),
+    const EnsureLastLineBreakDeleteRule()
   ]);
 
   static Rules getInstance() => _instance;

@@ -21,6 +21,15 @@ extension Localization on String {
           'Please first select some text to transform into a link.':
               'يرجى اختيار نص للتحويل إلى رابط',
         },
+        'da': {
+          'Paste a link': 'Indsæt link',
+          'Ok': 'Ok',
+          'Select Color': 'Vælg farve',
+          'Gallery': 'Galleri',
+          'Link': 'Link',
+          'Please first select some text to transform into a link.':
+              'Vælg venligst først noget tekst for at lave det om til et link.',
+        },
         'de': {
           'Paste a link': 'Link hinzufügen',
           'Ok': 'Ok',
@@ -74,7 +83,36 @@ extension Localization on String {
           'Gallery': 'Galeria',
           'Link': 'Enlace',
           'Please first select some text to transform into a link.':
-              'Por favor selecciona primero un texto para transformarlo en un enlace',
+              'Por favor selecciona primero un texto para transformarlo '
+                  'en un enlace',
+        },
+        'tr': {
+          'Paste a link': 'Bağlantıyı Yapıştır',
+          'Ok': 'Tamam',
+          'Select Color': 'Renk Seçin',
+          'Gallery': 'Galeri',
+          'Link': 'Bağlantı',
+          'Please first select some text to transform into a link.':
+              'Lütfen bağlantıya dönüştürmek için bir metin seçin.',
+        },
+        'uk': {
+          'Paste a link': 'Вставити посилання',
+          'Ok': 'ОК',
+          'Select Color': 'Вибрати колір',
+          'Gallery': 'Галерея',
+          'Link': 'Посилання',
+          'Please first select some text to transform into a link.':
+              'Виділіть текст для створення посилання.',
+        },
+        'pt': {
+          'Paste a link': 'Colar um link',
+          'Ok': 'Ok',
+          'Select Color': 'Selecionar uma cor',
+          'Gallery': 'Galeria',
+          'Link': 'Link',
+          'Please first select some text to transform into a link.':
+              'Por favor selecione primeiro um texto para '
+                  'transformá-lo em um link',
         },
       };
 

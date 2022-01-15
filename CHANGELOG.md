@@ -1,3 +1,79 @@
+# [3.2.0]
+* Support multiple links insertion on the go.
+
+# [3.1.1]
+* Add selection completed callback.
+
+# [3.1.0]
+* Fixed image ontap functionality.
+
+# [3.0.4]
+* Add maxContentWidth constraint to editor.
+
+# [3.0.3]
+* Do not show caret on screen when the editor is not focused.
+
+# [3.0.2]
+* Fix launch link for read-only mode.
+
+## [3.0.1]
+* Handle null value of Attribute.link.
+
+## [3.0.0]
+* Launch link improvements.
+* Removed QuillSimpleViewer.
+
+## [2.5.2]
+* Skip image when pasting.
+
+## [2.5.1]
+* Bug fix for Desktop `Shift` + `Click` support.
+
+## [2.5.0]
+* Update checkbox list.
+
+## [2.4.1]
+* Desktop selection improvements.
+
+## [2.4.0]
+* Improve inline code style.
+
+## [2.3.3]
+* Improves selection rects to have consistent height regardless of individual segment text styles.
+
+## [2.3.2]
+* Allow disabling floating cursor.
+
+## [2.3.1]
+* Preserve last newline character on delete.
+
+## [2.3.0]
+* Massive changes to support flutter 2.8.
+
+## [2.2.2]
+* iOS - floating cursor.
+
+## [2.2.1]
+* Bug fix for imports supporting flutter 2.8.
+
+## [2.2.0]
+* Support flutter 2.8.
+
+## [2.1.1]
+* Add methods of clearing editor and moving cursor.
+
+## [2.1.0]
+* Add delete handler.
+
+## [2.0.23]
+* Support custom replaceText handler.
+
+## [2.0.22]
+* Fix attribute compare and fix font size parsing.
+
+## [2.0.21]
+* Handle click on embed object.
+
 ## [2.0.20]
 * Improved UX/UI of Image widget.
 

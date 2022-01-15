@@ -10,11 +10,17 @@ import '../models/documents/style.dart';
 import '../models/quill_delta.dart';
 import '../utils/diff_delta.dart';
 
+typedef ReplaceTextCallback = bool Function(int index, int len, Object? data);
+typedef DeleteCallback = void Function(int cursorPosition, bool forward);
+
 class QuillController extends ChangeNotifier {
   QuillController({
     required this.document,
     required TextSelection selection,
     bool keepStyleOnNewLine = false,
+    this.onReplaceText,
+    this.onDelete,
+    this.onSelectionCompleted,
   })  : _selection = selection,
         _keepStyleOnNewLine = keepStyleOnNewLine;
 
@@ -35,6 +41,15 @@ class QuillController extends ChangeNotifier {
   /// Currently selected text within the [document].
   TextSelection get selection => _selection;
   TextSelection _selection;
+
+  /// Custom [replaceText] handler
+  /// Return false to ignore the event
+  ReplaceTextCallback? onReplaceText;
+
+  /// Custom delete handler
+  DeleteCallback? onDelete;
+
+  void Function()? onSelectionCompleted;
 
   /// Store any styles attribute that got toggled by the tap of a button
   /// and that has not been applied yet.
@@ -110,10 +125,20 @@ class QuillController extends ChangeNotifier {
 
   bool get hasRedo => document.hasRedo;
 
+  /// clear editor
+  void clear() {
+    replaceText(0, plainTextEditingValue.text.length - 1, '',
+        const TextSelection.collapsed(offset: 0));
+  }
+
   void replaceText(
       int index, int len, Object? data, TextSelection? textSelection,
       {bool ignoreFocus = false}) {
     assert(data is String || data is Embeddable);
+
+    if (onReplaceText != null && !onReplaceText!(index, len, data)) {
+      return;
+    }
 
     Delta? delta;
     if (len > 0 || data is! String || data.isNotEmpty) {
@@ -175,6 +200,14 @@ class QuillController extends ChangeNotifier {
     ignoreFocusOnTextChange = false;
   }
 
+  /// Called in two cases:
+  /// forward == false && textBefore.isEmpty
+  /// forward == true && textAfter.isEmpty
+  /// Android only
+  /// see https://github.com/singerdmx/flutter-quill/discussions/514
+  void handleDelete(int cursorPosition, bool forward) =>
+      onDelete?.call(cursorPosition, forward);
+
   void formatText(int index, int len, Attribute? attribute) {
     if (len == 0 &&
         attribute!.isInline &&
@@ -194,6 +227,17 @@ class QuillController extends ChangeNotifier {
 
   void formatSelection(Attribute? attribute) {
     formatText(selection.start, selection.end - selection.start, attribute);
+  }
+
+  void moveCursorToStart() {
+    updateSelection(
+        const TextSelection.collapsed(offset: 0), ChangeSource.LOCAL);
+  }
+
+  void moveCursorToEnd() {
+    updateSelection(
+        TextSelection.collapsed(offset: plainTextEditingValue.text.length),
+        ChangeSource.LOCAL);
   }
 
   void updateSelection(TextSelection textSelection, ChangeSource source) {
