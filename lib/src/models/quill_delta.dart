@@ -1,10 +1,4 @@
-// Copyright (c) 2018, Anatoly Pulyaevskiy. All rights reserved. Use of this
-// source code is governed by a BSD-style license that can be found in the
-// LICENSE file.
-
 /// Implementation of Quill Delta format in Dart.
-library quill_delta;
-
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
@@ -195,6 +189,10 @@ class Delta {
   /// Creates new [Delta] from [other].
   factory Delta.from(Delta other) =>
       Delta._(List<Operation>.from(other._operations));
+
+  /// Creates new [Delta] from a List of Operation
+  factory Delta.fromOperations(List<Operation> operations) =>
+      Delta._(operations.toList());
 
   // Placeholder char for embed in diff()
   static final String _kNullCharacter = String.fromCharCode(0);

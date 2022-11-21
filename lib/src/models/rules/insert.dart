@@ -1,7 +1,8 @@
 import 'package:tuple/tuple.dart';
 
-import '../../../models/documents/document.dart';
+import '../../models/documents/document.dart';
 import '../documents/attribute.dart';
+import '../documents/nodes/embeddable.dart';
 import '../documents/style.dart';
 import '../quill_delta.dart';
 import 'rule.dart';
@@ -114,7 +115,11 @@ class PreserveBlockStyleOnInsertRule extends InsertRule {
         delta.insert('\n', lineStyle.toJson());
       } else if (i < lines.length - 1) {
         // we don't want to insert a newline after the last chunk of text, so -1
-        delta.insert('\n', blockStyle);
+        final blockAttributes = blockStyle.isEmpty
+            ? null
+            : blockStyle.map<String, dynamic>((_, attribute) =>
+                MapEntry<String, dynamic>(attribute.key, attribute.value));
+        delta.insert('\n', blockAttributes);
       }
     }
 
@@ -239,6 +244,7 @@ class ResetLineFormatOnNewLineRule extends InsertRule {
 }
 
 /// Handles all format operations which manipulate embeds.
+/// This rule wraps line breaks around video, not image.
 class InsertEmbedsRule extends InsertRule {
   const InsertEmbedsRule();
 
@@ -246,6 +252,12 @@ class InsertEmbedsRule extends InsertRule {
   Delta? applyRule(Delta document, int index,
       {int? len, Object? data, Attribute? attribute}) {
     if (data is String) {
+      return null;
+    }
+
+    assert(data is Map);
+
+    if (!(data as Map).containsKey(BlockEmbed.videoType)) {
       return null;
     }
 
@@ -320,7 +332,7 @@ class AutoFormatMultipleLinksRule extends InsertRule {
   // URL generator tool (https://www.randomlists.com/urls) is used.
   static const _linkPattern =
       r'(https?:\/\/|www\.)[\w-\.]+\.[\w-\.]+(\/([\S]+)?)?';
-  static final _linkRegExp = RegExp(_linkPattern);
+  static final linkRegExp = RegExp(_linkPattern, caseSensitive: false);
 
   @override
   Delta? applyRule(
@@ -364,7 +376,7 @@ class AutoFormatMultipleLinksRule extends InsertRule {
     final affectedWords = '$leftWordPart$data$rightWordPart';
 
     // Check for URL pattern.
-    final matches = _linkRegExp.allMatches(affectedWords);
+    final matches = linkRegExp.allMatches(affectedWords);
 
     // If there are no matches, do not apply any format.
     if (matches.isEmpty) return null;
@@ -394,7 +406,7 @@ class AutoFormatMultipleLinksRule extends InsertRule {
       // Keep the leading segment of text and add link with its proper
       // attribute.
       formatterDelta
-        ..retain(separationLength, LinkAttribute(null).toJson())
+        ..retain(separationLength, Attribute.link.toJson())
         ..retain(link.length, LinkAttribute(link).toJson());
 
       // Update reference index.
@@ -405,7 +417,7 @@ class AutoFormatMultipleLinksRule extends InsertRule {
     final remainingLength = affectedWords.length - previousLinkEndRelativeIndex;
 
     // Remove links from remaining non-link text.
-    formatterDelta.retain(remainingLength, LinkAttribute(null).toJson());
+    formatterDelta.retain(remainingLength, Attribute.link.toJson());
 
     // Build and return resulting change delta.
     return baseDelta.compose(formatterDelta);

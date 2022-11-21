@@ -9,15 +9,20 @@ import 'package:flutter/services.dart';
 import 'package:tuple/tuple.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../flutter_quill.dart';
+import '../models/documents/attribute.dart';
 import '../models/documents/nodes/container.dart' as container_node;
+import '../models/documents/nodes/leaf.dart';
 import '../models/documents/nodes/leaf.dart' as leaf;
 import '../models/documents/nodes/line.dart';
 import '../models/documents/nodes/node.dart';
 import '../models/documents/style.dart';
 import '../utils/color.dart';
+import '../utils/font.dart';
+import '../utils/platform.dart';
 import 'box.dart';
+import 'controller.dart';
 import 'cursor.dart';
+import 'default_styles.dart';
 import 'delegate.dart';
 import 'keyboard_listener.dart';
 import 'link.dart';
@@ -40,7 +45,7 @@ class TextLine extends StatefulWidget {
 
   final Line line;
   final TextDirection? textDirection;
-  final EmbedBuilder embedBuilder;
+  final EmbedsBuilder embedBuilder;
   final DefaultStyles styles;
   final bool readOnly;
   final QuillController controller;
@@ -71,12 +76,6 @@ class _TextLineState extends State<TextLine> {
     }
   }
 
-  bool get isDesktop => {
-        TargetPlatform.macOS,
-        TargetPlatform.linux,
-        TargetPlatform.windows
-      }.contains(defaultTargetPlatform);
-
   bool get canLaunchLinks {
     // In readOnly mode users can launch links
     // by simply tapping (clicking) on them
@@ -86,7 +85,7 @@ class _TextLineState extends State<TextLine> {
 
     // Desktop platforms (macos, linux, windows):
     // only allow Meta(Control)+Click combinations
-    if (isDesktop) {
+    if (isDesktop()) {
       return _metaOrControlPressed;
     }
     // Mobile platforms (ios, android): always allow but we install a
@@ -136,7 +135,14 @@ class _TextLineState extends State<TextLine> {
     if (widget.line.hasEmbed && widget.line.childCount == 1) {
       // For video, it is always single child
       final embed = widget.line.children.single as Embed;
-      return EmbedProxy(widget.embedBuilder(context, embed, widget.readOnly));
+      return EmbedProxy(
+        widget.embedBuilder(
+          context,
+          widget.controller,
+          embed,
+          widget.readOnly,
+        ),
+      );
     }
     final textSpan = _getTextSpanForWholeLine(context);
     final strutStyle = StrutStyle.fromTextStyle(textSpan.style!);
@@ -176,8 +182,15 @@ class _TextLineState extends State<TextLine> {
         }
         // Here it should be image
         final embed = WidgetSpan(
-            child: EmbedProxy(
-                widget.embedBuilder(context, child, widget.readOnly)));
+          child: EmbedProxy(
+            widget.embedBuilder(
+              context,
+              widget.controller,
+              child,
+              widget.readOnly,
+            ),
+          ),
+        );
         textSpanChildren.add(embed);
         continue;
       }
@@ -209,6 +222,9 @@ class _TextLineState extends State<TextLine> {
 
   TextSpan _buildTextSpan(DefaultStyles defaultStyles, LinkedList<Node> nodes,
       TextStyle lineStyle) {
+    if (nodes.isEmpty && kIsWeb) {
+      nodes = LinkedList<Node>()..add(leaf.Text('\u{200B}'));
+    }
     final children = nodes
         .map((node) =>
             _getTextSpanFromNode(defaultStyles, node, widget.line.style))
@@ -305,7 +321,7 @@ class _TextLineState extends State<TextLine> {
         if (k == Attribute.underline.key || k == Attribute.strikeThrough.key) {
           var textColor = defaultStyles.color;
           if (color?.value is String) {
-            textColor = stringToColor(color?.value);
+            textColor = stringToColor(color?.value, textColor);
           }
           res = _merge(res.copyWith(decorationColor: textColor),
               s!.copyWith(decorationColor: textColor));
@@ -340,19 +356,7 @@ class _TextLineState extends State<TextLine> {
           res = res.merge(defaultStyles.sizeHuge);
           break;
         default:
-          double? fontSize;
-          if (size.value is double) {
-            fontSize = size.value;
-          } else if (size.value is int) {
-            fontSize = size.value.toDouble();
-          } else if (size.value is String) {
-            fontSize = double.tryParse(size.value);
-          }
-          if (fontSize != null) {
-            res = res.merge(TextStyle(fontSize: fontSize));
-          } else {
-            throw 'Invalid size ${size.value}';
-          }
+          res = res.merge(TextStyle(fontSize: getFontSize(size.value)));
       }
     }
 
@@ -381,7 +385,7 @@ class _TextLineState extends State<TextLine> {
       return _linkRecognizers[segment]!;
     }
 
-    if (isDesktop || widget.readOnly) {
+    if (isDesktop() || widget.readOnly) {
       _linkRecognizers[segment] = TapGestureRecognizer()
         ..onTap = () => _tapNodeLink(segment);
     } else {
@@ -392,7 +396,7 @@ class _TextLineState extends State<TextLine> {
   }
 
   Future<void> _launchUrl(String url) async {
-    await launch(url);
+    await launchUrl(Uri.parse(url));
   }
 
   void _tapNodeLink(Node node) {
@@ -402,7 +406,7 @@ class _TextLineState extends State<TextLine> {
   }
 
   void _tapLink(String? link) {
-    if (!widget.readOnly || link == null) {
+    if (link == null) {
       return;
     }
 
@@ -429,40 +433,13 @@ class _TextLineState extends State<TextLine> {
         Clipboard.setData(ClipboardData(text: link));
         break;
       case LinkMenuAction.remove:
-        final range = _getLinkRange(node);
+        final range = getLinkRange(node);
         widget.controller
             .formatText(range.start, range.end - range.start, Attribute.link);
         break;
       case LinkMenuAction.none:
         break;
     }
-  }
-
-  TextRange _getLinkRange(Node node) {
-    var start = node.documentOffset;
-    var length = node.length;
-    var prev = node.previous;
-    final linkAttr = node.style.attributes[Attribute.link.key]!;
-    while (prev != null) {
-      if (prev.style.attributes[Attribute.link.key] == linkAttr) {
-        start = prev.documentOffset;
-        length += prev.length;
-        prev = prev.previous;
-      } else {
-        break;
-      }
-    }
-
-    var next = node.next;
-    while (next != null) {
-      if (next.style.attributes[Attribute.link.key] == linkAttr) {
-        length += next.length;
-        next = next.next;
-      } else {
-        break;
-      }
-    }
-    return TextRange(start: start, end: start + length);
   }
 
   TextStyle _merge(TextStyle a, TextStyle b) {
@@ -859,19 +836,10 @@ class RenderEditableTextLine extends RenderEditableBox {
   /// of the cursor for iOS is approximate and obtained through an eyeball
   /// comparison.
   void _computeCaretPrototype() {
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-        _caretPrototype = Rect.fromLTWH(0, 0, cursorWidth, cursorHeight + 2);
-        break;
-      case TargetPlatform.android:
-      case TargetPlatform.fuchsia:
-      case TargetPlatform.linux:
-      case TargetPlatform.windows:
-        _caretPrototype = Rect.fromLTWH(0, 2, cursorWidth, cursorHeight - 4.0);
-        break;
-      default:
-        throw 'Invalid platform';
+    if (isAppleOS()) {
+      _caretPrototype = Rect.fromLTWH(0, 0, cursorWidth, cursorHeight + 2);
+    } else {
+      _caretPrototype = Rect.fromLTWH(0, 2, cursorWidth, cursorHeight - 4.0);
     }
   }
 

@@ -12,13 +12,21 @@ class SelectHeaderStyleButton extends StatefulWidget {
     required this.controller,
     this.iconSize = kDefaultIconSize,
     this.iconTheme,
+    this.attributes = const [
+      Attribute.header,
+      Attribute.h1,
+      Attribute.h2,
+      Attribute.h3,
+    ],
+    this.afterButtonPressed,
     Key? key,
   }) : super(key: key);
 
   final QuillController controller;
   final double iconSize;
-
   final QuillIconTheme? iconTheme;
+  final List<Attribute> attributes;
+  final VoidCallback? afterButtonPressed;
 
   @override
   _SelectHeaderStyleButtonState createState() =>
@@ -26,36 +34,32 @@ class SelectHeaderStyleButton extends StatefulWidget {
 }
 
 class _SelectHeaderStyleButtonState extends State<SelectHeaderStyleButton> {
-  Attribute? _value;
+  Attribute? _selectedAttribute;
 
   Style get _selectionStyle => widget.controller.getSelectionStyle();
+
+  final _valueToText = <Attribute, String>{
+    Attribute.header: 'N',
+    Attribute.h1: 'H1',
+    Attribute.h2: 'H2',
+    Attribute.h3: 'H3',
+  };
 
   @override
   void initState() {
     super.initState();
     setState(() {
-      _value =
-          _selectionStyle.attributes[Attribute.header.key] ?? Attribute.header;
+      _selectedAttribute = _getHeaderValue();
     });
     widget.controller.addListener(_didChangeEditingValue);
   }
 
   @override
   Widget build(BuildContext context) {
-    final _valueToText = <Attribute, String>{
-      Attribute.header: 'N',
-      Attribute.h1: 'H1',
-      Attribute.h2: 'H2',
-      Attribute.h3: 'H3',
-    };
-
-    final _valueAttribute = <Attribute>[
-      Attribute.header,
-      Attribute.h1,
-      Attribute.h2,
-      Attribute.h3
-    ];
-    final _valueString = <String>['N', 'H1', 'H2', 'H3'];
+    assert(
+      widget.attributes.every((element) => _valueToText.keys.contains(element)),
+      'All attributes must be one of them: header, h1, h2 or h3',
+    );
 
     final theme = Theme.of(context);
     final style = TextStyle(
@@ -65,8 +69,10 @@ class _SelectHeaderStyleButtonState extends State<SelectHeaderStyleButton> {
 
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: List.generate(4, (index) {
+      children: widget.attributes.map((attribute) {
+        final isSelected = _selectedAttribute == attribute;
         return Padding(
+          // ignore: prefer_const_constructors
           padding: EdgeInsets.symmetric(horizontal: !kIsWeb ? 1.0 : 5.0),
           child: ConstrainedBox(
             constraints: BoxConstraints.tightFor(
@@ -79,18 +85,24 @@ class _SelectHeaderStyleButtonState extends State<SelectHeaderStyleButton> {
               elevation: 0,
               visualDensity: VisualDensity.compact,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(2)),
-              fillColor: _valueToText[_value] == _valueString[index]
+                  borderRadius: BorderRadius.circular(
+                      widget.iconTheme?.borderRadius ?? 2)),
+              fillColor: isSelected
                   ? (widget.iconTheme?.iconSelectedFillColor ??
                       theme.toggleableActiveColor)
                   : (widget.iconTheme?.iconUnselectedFillColor ??
                       theme.canvasColor),
-              onPressed: () =>
-                  widget.controller.formatSelection(_valueAttribute[index]),
+              onPressed: () {
+                final _attribute = _selectedAttribute == attribute
+                    ? Attribute.header
+                    : attribute;
+                widget.controller.formatSelection(_attribute);
+                widget.afterButtonPressed?.call();
+              },
               child: Text(
-                _valueString[index],
+                _valueToText[attribute] ?? '',
                 style: style.copyWith(
-                  color: _valueToText[_value] == _valueString[index]
+                  color: isSelected
                       ? (widget.iconTheme?.iconSelectedColor ??
                           theme.primaryIconTheme.color)
                       : (widget.iconTheme?.iconUnselectedColor ??
@@ -100,15 +112,24 @@ class _SelectHeaderStyleButtonState extends State<SelectHeaderStyleButton> {
             ),
           ),
         );
-      }),
+      }).toList(),
     );
   }
 
   void _didChangeEditingValue() {
     setState(() {
-      _value =
-          _selectionStyle.attributes[Attribute.header.key] ?? Attribute.header;
+      _selectedAttribute = _getHeaderValue();
     });
+  }
+
+  Attribute<dynamic> _getHeaderValue() {
+    final attr = widget.controller.toolbarButtonToggler[Attribute.header.key];
+    if (attr != null) {
+      // checkbox tapping causes controller.selection to go to offset 0
+      widget.controller.toolbarButtonToggler.remove(Attribute.header.key);
+      return attr;
+    }
+    return _selectionStyle.attributes[Attribute.header.key] ?? Attribute.header;
   }
 
   @override
@@ -117,8 +138,7 @@ class _SelectHeaderStyleButtonState extends State<SelectHeaderStyleButton> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_didChangeEditingValue);
       widget.controller.addListener(_didChangeEditingValue);
-      _value =
-          _selectionStyle.attributes[Attribute.header.key] ?? Attribute.header;
+      _selectedAttribute = _getHeaderValue();
     }
   }
 

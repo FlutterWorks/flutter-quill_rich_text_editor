@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 
 class QuillIconTheme {
-  const QuillIconTheme({
-    this.iconSelectedColor,
-    this.iconUnselectedColor,
-    this.iconSelectedFillColor,
-    this.iconUnselectedFillColor,
-    this.disabledIconColor,
-    this.disabledIconFillColor,
-  });
+  const QuillIconTheme(
+      {this.iconSelectedColor,
+      this.iconUnselectedColor,
+      this.iconSelectedFillColor,
+      this.iconUnselectedFillColor,
+      this.disabledIconColor,
+      this.disabledIconFillColor,
+      this.borderRadius});
 
   ///The color to use for selected icons in the toolbar
   final Color? iconSelectedColor;
@@ -27,4 +27,7 @@ class QuillIconTheme {
 
   ///The fill color to use for disabled icons in the toolbar
   final Color? disabledIconFillColor;
+
+  ///The borderRadius for icons
+  final double? borderRadius;
 }

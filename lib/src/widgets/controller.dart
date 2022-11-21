@@ -1,27 +1,31 @@
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:tuple/tuple.dart';
 
 import '../models/documents/attribute.dart';
 import '../models/documents/document.dart';
-import '../models/documents/nodes/embed.dart';
+import '../models/documents/nodes/embeddable.dart';
+import '../models/documents/nodes/leaf.dart';
 import '../models/documents/style.dart';
 import '../models/quill_delta.dart';
-import '../utils/diff_delta.dart';
+import '../utils/delta.dart';
 
 typedef ReplaceTextCallback = bool Function(int index, int len, Object? data);
 typedef DeleteCallback = void Function(int cursorPosition, bool forward);
 
 class QuillController extends ChangeNotifier {
   QuillController({
-    required this.document,
+    required Document document,
     required TextSelection selection,
     bool keepStyleOnNewLine = false,
     this.onReplaceText,
     this.onDelete,
     this.onSelectionCompleted,
-  })  : _selection = selection,
+    this.onSelectionChanged,
+  })  : _document = document,
+        _selection = selection,
         _keepStyleOnNewLine = keepStyleOnNewLine;
 
   factory QuillController.basic() {
@@ -32,7 +36,16 @@ class QuillController extends ChangeNotifier {
   }
 
   /// Document managed by this controller.
-  final Document document;
+  Document _document;
+  Document get document => _document;
+  set document(doc) {
+    _document = doc;
+
+    // Prevent the selection from
+    _selection = const TextSelection(baseOffset: 0, extentOffset: 0);
+
+    notifyListeners();
+  }
 
   /// Tells whether to keep or reset the [toggledStyle]
   /// when user adds a new line.
@@ -50,6 +63,7 @@ class QuillController extends ChangeNotifier {
   DeleteCallback? onDelete;
 
   void Function()? onSelectionCompleted;
+  void Function(TextSelection textSelection)? onSelectionChanged;
 
   /// Store any styles attribute that got toggled by the tap of a button
   /// and that has not been applied yet.
@@ -57,6 +71,10 @@ class QuillController extends ChangeNotifier {
   Style toggledStyle = Style();
 
   bool ignoreFocusOnTextChange = false;
+
+  /// Skip requestKeyboard being called in
+  /// RawEditorState#_didChangeTextEditingValue
+  bool skipRequestKeyboard = false;
 
   /// True when this [QuillController] instance has been disposed.
   ///
@@ -82,6 +100,40 @@ class QuillController extends ChangeNotifier {
     return document
         .collectStyle(selection.start, selection.end - selection.start)
         .mergeAll(toggledStyle);
+  }
+
+  // Increases or decreases the indent of the current selection by 1.
+  void indentSelection(bool isIncrease) {
+    final indent = getSelectionStyle().attributes[Attribute.indent.key];
+    if (indent == null) {
+      if (isIncrease) {
+        formatSelection(Attribute.indentL1);
+      }
+      return;
+    }
+    if (indent.value == 1 && !isIncrease) {
+      formatSelection(Attribute.clone(Attribute.indentL1, null));
+      return;
+    }
+    if (isIncrease) {
+      formatSelection(Attribute.getIndentLevel(indent.value + 1));
+      return;
+    }
+    formatSelection(Attribute.getIndentLevel(indent.value - 1));
+  }
+
+  /// Returns all styles for each node within selection
+  List<Tuple2<int, Style>> getAllIndividualSelectionStyles() {
+    final styles = document.collectAllIndividualStyles(
+        selection.start, selection.end - selection.start);
+    return styles;
+  }
+
+  /// Returns plain text for each node within selection
+  String getPlainText() {
+    final text =
+        document.getPlainText(selection.start, selection.end - selection.start);
+    return text;
   }
 
   /// Returns all styles for any character within the specified text range.
@@ -208,14 +260,25 @@ class QuillController extends ChangeNotifier {
   void handleDelete(int cursorPosition, bool forward) =>
       onDelete?.call(cursorPosition, forward);
 
+  void formatTextStyle(int index, int len, Style style) {
+    style.attributes.forEach((key, attr) {
+      formatText(index, len, attr);
+    });
+  }
+
   void formatText(int index, int len, Attribute? attribute) {
     if (len == 0 &&
         attribute!.isInline &&
         attribute.key != Attribute.link.key) {
+      // Add the attribute to our toggledStyle.
+      // It will be used later upon insertion.
       toggledStyle = toggledStyle.put(attribute);
     }
 
     final change = document.format(index, len, attribute);
+    // Transform selection against the composed change and give priority to
+    // the change. This is needed in cases when format operation actually
+    // inserts data into the document (e.g. embeds).
     final adjustedSelection = selection.copyWith(
         baseOffset: change.transformPosition(selection.baseOffset),
         extentOffset: change.transformPosition(selection.extentOffset));
@@ -232,6 +295,11 @@ class QuillController extends ChangeNotifier {
   void moveCursorToStart() {
     updateSelection(
         const TextSelection.collapsed(offset: 0), ChangeSource.LOCAL);
+  }
+
+  void moveCursorToPosition(int position) {
+    updateSelection(
+        TextSelection.collapsed(offset: position), ChangeSource.LOCAL);
   }
 
   void moveCursorToEnd() {
@@ -295,5 +363,26 @@ class QuillController extends ChangeNotifier {
     _selection = selection.copyWith(
         baseOffset: math.min(selection.baseOffset, end),
         extentOffset: math.min(selection.extentOffset, end));
+    toggledStyle = Style();
+    onSelectionChanged?.call(textSelection);
   }
+
+  /// Given offset, find its leaf node in document
+  Leaf? queryNode(int offset) {
+    return document.querySegmentLeafNode(offset).item2;
+  }
+
+  /// Clipboard for image url and its corresponding style
+  /// item1 is url and item2 is style string
+  Tuple2<String, String>? _copiedImageUrl;
+
+  Tuple2<String, String>? get copiedImageUrl => _copiedImageUrl;
+
+  set copiedImageUrl(Tuple2<String, String>? value) {
+    _copiedImageUrl = value;
+    Clipboard.setData(const ClipboardData(text: ''));
+  }
+
+  // Notify toolbar buttons directly with attributes
+  Map<String, Attribute> toolbarButtonToggler = {};
 }

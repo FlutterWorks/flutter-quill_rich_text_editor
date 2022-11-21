@@ -1,6 +1,6 @@
-import 'dart:convert';
-import 'dart:io' as io;
 import 'dart:math' as math;
+// ignore: unnecessary_import
+import 'dart:typed_data';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -8,42 +8,25 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:string_validator/string_validator.dart';
+import 'package:i18n_extension/i18n_widget.dart';
+import 'package:tuple/tuple.dart';
 
 import '../models/documents/document.dart';
 import '../models/documents/nodes/container.dart' as container_node;
-import '../models/documents/nodes/leaf.dart' as leaf;
-import '../models/documents/nodes/line.dart';
-import '../utils/string_helper.dart';
+import '../models/documents/nodes/embeddable.dart';
+import '../models/documents/nodes/leaf.dart';
+import '../models/documents/style.dart';
+import '../utils/platform.dart';
 import 'box.dart';
 import 'controller.dart';
 import 'cursor.dart';
 import 'default_styles.dart';
 import 'delegate.dart';
-import 'embeds/image.dart';
-import 'embeds/video_app.dart';
-import 'embeds/youtube_video_app.dart';
+import 'embeds.dart';
 import 'float_cursor.dart';
 import 'link.dart';
 import 'raw_editor.dart';
 import 'text_selection.dart';
-
-const linkPrefixes = [
-  'mailto:', // email
-  'tel:', // telephone
-  'sms:', // SMS
-  'callto:',
-  'wtai:',
-  'market:',
-  'geopoint:',
-  'ymsgr:',
-  'msnim:',
-  'gtalk:', // Google Talk
-  'skype:',
-  'sip:', // Lync
-  'whatsapp:',
-  'http'
-];
 
 /// Base interface for the editor state which defines contract used by
 /// various mixins.
@@ -54,6 +37,10 @@ abstract class EditorState extends State<RawEditor>
   RenderEditor get renderEditor;
 
   EditorTextSelectionOverlay? get selectionOverlay;
+
+  List<Tuple2<int, Style>> get pasteStyle;
+
+  String get pastePlainText;
 
   /// Controls the floating cursor animation when it is released.
   /// The floating cursor is animated to merge with the regular cursor.
@@ -156,88 +143,6 @@ abstract class RenderAbstractEditor implements TextLayoutMetrics {
   void selectPosition({required SelectionChangedCause cause});
 }
 
-String _standardizeImageUrl(String url) {
-  if (url.contains('base64')) {
-    return url.split(',')[1];
-  }
-  return url;
-}
-
-bool _isMobile() => io.Platform.isAndroid || io.Platform.isIOS;
-
-Widget defaultEmbedBuilder(
-    BuildContext context, leaf.Embed node, bool readOnly) {
-  assert(!kIsWeb, 'Please provide EmbedBuilder for Web');
-  switch (node.value.type) {
-    case 'image':
-      final imageUrl = _standardizeImageUrl(node.value.data);
-      var image;
-      final style = node.style.attributes['style'];
-      if (_isMobile() && style != null) {
-        final _attrs = parseKeyValuePairs(style.value.toString(),
-            {'mobileWidth', 'mobileHeight', 'mobileMargin', 'mobileAlignment'});
-        if (_attrs.isNotEmpty) {
-          assert(
-              _attrs['mobileWidth'] != null && _attrs['mobileHeight'] != null,
-              'mobileWidth and mobileHeight must be specified');
-          final w = double.parse(_attrs['mobileWidth']!);
-          final h = double.parse(_attrs['mobileHeight']!);
-          final m = _attrs['mobileMargin'] == null
-              ? 0.0
-              : double.parse(_attrs['mobileMargin']!);
-          final a = getAlignment(_attrs['mobileAlignment']);
-          image = Padding(
-              padding: EdgeInsets.all(m),
-              child: imageUrl.startsWith('http')
-                  ? Image.network(imageUrl, width: w, height: h, alignment: a)
-                  : isBase64(imageUrl)
-                      ? Image.memory(base64.decode(imageUrl),
-                          width: w, height: h, alignment: a)
-                      : Image.file(io.File(imageUrl),
-                          width: w, height: h, alignment: a));
-        }
-      }
-      image ??= imageUrl.startsWith('http')
-          ? Image.network(imageUrl)
-          : isBase64(imageUrl)
-              ? Image.memory(base64.decode(imageUrl))
-              : Image.file(io.File(imageUrl));
-
-      if (!readOnly) {
-        return image;
-      }
-
-      return GestureDetector(
-          onTap: () {
-            Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (context) => ImageTapWrapper(
-                          imageProvider: imageUrl.startsWith('http')
-                              ? NetworkImage(imageUrl)
-                              : isBase64(imageUrl)
-                                  ? Image.memory(base64.decode(imageUrl))
-                                      as ImageProvider<Object>?
-                                  : FileImage(io.File(imageUrl)),
-                        )));
-          },
-          child: image);
-    case 'video':
-      final videoUrl = node.value.data;
-      if (videoUrl.contains('youtube.com') || videoUrl.contains('youtu.be')) {
-        return YoutubeVideoApp(
-            videoUrl: videoUrl, context: context, readOnly: readOnly);
-      }
-      return VideoApp(videoUrl: videoUrl, context: context, readOnly: readOnly);
-    default:
-      throw UnimplementedError(
-        'Embeddable type "${node.value.type}" is not supported by default '
-        'embed builder of QuillEditor. You must pass your own builder function '
-        'to embedBuilder property of QuillEditor or QuillField widgets.',
-      );
-  }
-}
-
 class QuillEditor extends StatefulWidget {
   const QuillEditor(
       {required this.controller,
@@ -252,6 +157,7 @@ class QuillEditor extends StatefulWidget {
       this.paintCursorAboveText,
       this.placeholder,
       this.enableInteractiveSelection = true,
+      this.enableSelectionToolbar = true,
       this.scrollBottomInset = 0,
       this.minHeight,
       this.maxHeight,
@@ -266,16 +172,25 @@ class QuillEditor extends StatefulWidget {
       this.onSingleLongTapStart,
       this.onSingleLongTapMoveUpdate,
       this.onSingleLongTapEnd,
-      this.embedBuilder = defaultEmbedBuilder,
+      this.embedBuilders,
       this.linkActionPickerDelegate = defaultLinkActionPickerDelegate,
       this.customStyleBuilder,
+      this.locale,
       this.floatingCursorDisabled = false,
-      Key? key});
+      this.textSelectionControls,
+      this.onImagePaste,
+      Key? key})
+      : super(key: key);
 
   factory QuillEditor.basic({
     required QuillController controller,
     required bool readOnly,
     Brightness? keyboardAppearance,
+    Iterable<EmbedBuilder>? embedBuilders,
+
+    /// The locale to use for the editor toolbar, defaults to system locale
+    /// More at https://github.com/singerdmx/flutter-quill#translation
+    Locale? locale,
   }) {
     return QuillEditor(
       controller: controller,
@@ -287,6 +202,8 @@ class QuillEditor extends StatefulWidget {
       expands: false,
       padding: EdgeInsets.zero,
       keyboardAppearance: keyboardAppearance ?? Brightness.light,
+      locale: locale,
+      embedBuilders: embedBuilders,
     );
   }
 
@@ -350,7 +267,13 @@ class QuillEditor extends StatefulWidget {
   /// When this is false, the text selection cannot be adjusted by
   /// the user, text cannot be copied, and the user cannot paste into
   /// the text field from the clipboard.
+  ///
+  /// To disable just the selection toolbar, set enableSelectionToolbar
+  /// to false.
   final bool enableInteractiveSelection;
+
+  /// Whether to show the cut/copy/paste menu when selecting text.
+  final bool enableSelectionToolbar;
 
   /// The minimum height to be occupied by this editor.
   ///
@@ -435,8 +358,12 @@ class QuillEditor extends StatefulWidget {
           LongPressEndDetails details, TextPosition Function(Offset offset))?
       onSingleLongTapEnd;
 
-  final EmbedBuilder embedBuilder;
+  final Iterable<EmbedBuilder>? embedBuilders;
   final CustomStyleBuilder? customStyleBuilder;
+
+  /// The locale to use for the editor toolbar, defaults to system locale
+  /// More https://github.com/singerdmx/flutter-quill#translation
+  final Locale? locale;
 
   /// Delegate function responsible for showing menu with link actions on
   /// mobile platforms (iOS, Android).
@@ -455,11 +382,21 @@ class QuillEditor extends StatefulWidget {
 
   final bool floatingCursorDisabled;
 
+  /// allows to create a custom textSelectionControls,
+  /// if this is null a default textSelectionControls based on the app's theme
+  /// will be used
+  final TextSelectionControls? textSelectionControls;
+
+  /// Callback when the user pastes the given image.
+  ///
+  /// Returns the url of the image if the image should be inserted.
+  final Future<String?> Function(Uint8List imageBytes)? onImagePaste;
+
   @override
-  _QuillEditorState createState() => _QuillEditorState();
+  QuillEditorState createState() => QuillEditorState();
 }
 
-class _QuillEditorState extends State<QuillEditor>
+class QuillEditorState extends State<QuillEditor>
     implements EditorTextSelectionGestureDetectorBuilderDelegate {
   final GlobalKey<EditorState> _editorKey = GlobalKey<EditorState>();
   late EditorTextSelectionGestureDetectorBuilder
@@ -485,35 +422,28 @@ class _QuillEditorState extends State<QuillEditor>
     Color selectionColor;
     Radius? cursorRadius;
 
-    switch (theme.platform) {
-      case TargetPlatform.android:
-      case TargetPlatform.fuchsia:
-      case TargetPlatform.linux:
-      case TargetPlatform.windows:
-        textSelectionControls = materialTextSelectionControls;
-        paintCursorAboveText = false;
-        cursorOpacityAnimates = false;
-        cursorColor ??= selectionTheme.cursorColor ?? theme.colorScheme.primary;
-        selectionColor = selectionTheme.selectionColor ??
-            theme.colorScheme.primary.withOpacity(0.40);
-        break;
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-        final cupertinoTheme = CupertinoTheme.of(context);
-        textSelectionControls = cupertinoTextSelectionControls;
-        paintCursorAboveText = true;
-        cursorOpacityAnimates = true;
-        cursorColor ??=
-            selectionTheme.cursorColor ?? cupertinoTheme.primaryColor;
-        selectionColor = selectionTheme.selectionColor ??
-            cupertinoTheme.primaryColor.withOpacity(0.40);
-        cursorRadius ??= const Radius.circular(2);
-        cursorOffset = Offset(
-            iOSHorizontalOffset / MediaQuery.of(context).devicePixelRatio, 0);
-        break;
-      default:
-        throw UnimplementedError();
+    if (isAppleOS(theme.platform)) {
+      final cupertinoTheme = CupertinoTheme.of(context);
+      textSelectionControls = cupertinoTextSelectionControls;
+      paintCursorAboveText = true;
+      cursorOpacityAnimates = true;
+      cursorColor ??= selectionTheme.cursorColor ?? cupertinoTheme.primaryColor;
+      selectionColor = selectionTheme.selectionColor ??
+          cupertinoTheme.primaryColor.withOpacity(0.40);
+      cursorRadius ??= const Radius.circular(2);
+      cursorOffset = Offset(
+          iOSHorizontalOffset / MediaQuery.of(context).devicePixelRatio, 0);
+    } else {
+      textSelectionControls = materialTextSelectionControls;
+      paintCursorAboveText = false;
+      cursorOpacityAnimates = false;
+      cursorColor ??= selectionTheme.cursorColor ?? theme.colorScheme.primary;
+      selectionColor = selectionTheme.selectionColor ??
+          theme.colorScheme.primary.withOpacity(0.40);
     }
+
+    final showSelectionToolbar =
+        widget.enableInteractiveSelection && widget.enableSelectionToolbar;
 
     final child = RawEditor(
       key: _editorKey,
@@ -527,13 +457,12 @@ class _QuillEditorState extends State<QuillEditor>
       placeholder: widget.placeholder,
       onLaunchUrl: widget.onLaunchUrl,
       toolbarOptions: ToolbarOptions(
-        copy: widget.enableInteractiveSelection,
-        cut: widget.enableInteractiveSelection,
-        paste: widget.enableInteractiveSelection,
-        selectAll: widget.enableInteractiveSelection,
+        copy: showSelectionToolbar,
+        cut: showSelectionToolbar,
+        paste: showSelectionToolbar,
+        selectAll: showSelectionToolbar,
       ),
-      showSelectionHandles: theme.platform == TargetPlatform.iOS ||
-          theme.platform == TargetPlatform.android,
+      showSelectionHandles: isMobile(theme.platform),
       showCursor: widget.showCursor,
       cursorStyle: CursorStyle(
         color: cursorColor,
@@ -552,19 +481,73 @@ class _QuillEditorState extends State<QuillEditor>
       expands: widget.expands,
       autoFocus: widget.autoFocus,
       selectionColor: selectionColor,
-      selectionCtrls: textSelectionControls,
+      selectionCtrls: widget.textSelectionControls ?? textSelectionControls,
       keyboardAppearance: widget.keyboardAppearance,
       enableInteractiveSelection: widget.enableInteractiveSelection,
       scrollPhysics: widget.scrollPhysics,
-      embedBuilder: widget.embedBuilder,
+      embedBuilder: (
+        context,
+        controller,
+        node,
+        readOnly,
+      ) =>
+          _buildCustomBlockEmbed(node, context, controller, readOnly),
       linkActionPickerDelegate: widget.linkActionPickerDelegate,
       customStyleBuilder: widget.customStyleBuilder,
       floatingCursorDisabled: widget.floatingCursorDisabled,
+      onImagePaste: widget.onImagePaste,
     );
 
-    return _selectionGestureDetectorBuilder.build(
-      behavior: HitTestBehavior.translucent,
-      child: child,
+    final editor = I18n(
+      initialLocale: widget.locale,
+      child: selectionEnabled
+          ? _selectionGestureDetectorBuilder.build(
+              behavior: HitTestBehavior.translucent,
+              child: child,
+            )
+          : child,
+    );
+
+    if (kIsWeb) {
+      // Intercept RawKeyEvent on Web to prevent it from propagating to parents
+      // that might interfere with the editor key behavior, such as
+      // SingleChildScrollView. Thanks to @wliumelb for the workaround.
+      // See issue https://github.com/singerdmx/flutter-quill/issues/304
+      return RawKeyboardListener(
+        onKey: (_) {},
+        focusNode: FocusNode(
+          onKey: (node, event) => KeyEventResult.skipRemainingHandlers,
+        ),
+        child: editor,
+      );
+    }
+
+    return editor;
+  }
+
+  Widget _buildCustomBlockEmbed(Embed node, BuildContext context,
+      QuillController controller, bool readOnly) {
+    final builders = widget.embedBuilders;
+
+    if (builders != null) {
+      var _node = node;
+
+      // Creates correct node for custom embed
+      if (node.value.type == BlockEmbed.customType) {
+        _node = Embed(CustomBlockEmbed.fromJsonString(node.value.data));
+      }
+
+      for (final builder in builders) {
+        if (builder.key == _node.value.type) {
+          return builder.build(context, controller, _node, readOnly);
+        }
+      }
+    }
+
+    throw UnimplementedError(
+      'Embeddable type "${node.value.type}" is not supported by supplied '
+      'embed builders. You must pass your own builder function to '
+      'embedBuilders property of QuillEditor or QuillField widgets.',
     );
   }
 
@@ -587,7 +570,7 @@ class _QuillEditorSelectionGestureDetectorBuilder
   _QuillEditorSelectionGestureDetectorBuilder(this._state)
       : super(delegate: _state);
 
-  final _QuillEditorState _state;
+  final QuillEditorState _state;
 
   @override
   void onForcePressStart(ForcePressDetails details) {
@@ -612,26 +595,19 @@ class _QuillEditorSelectionGestureDetectorBuilder
     if (!delegate.selectionEnabled) {
       return;
     }
-    switch (Theme.of(_state.context).platform) {
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-        renderEditor!.selectPositionAt(
-          from: details.globalPosition,
-          cause: SelectionChangedCause.longPress,
-        );
-        break;
-      case TargetPlatform.android:
-      case TargetPlatform.fuchsia:
-      case TargetPlatform.linux:
-      case TargetPlatform.windows:
-        renderEditor!.selectWordsInRange(
-          details.globalPosition - details.offsetFromOrigin,
-          details.globalPosition,
-          SelectionChangedCause.longPress,
-        );
-        break;
-      default:
-        throw 'Invalid platform';
+
+    final _platform = Theme.of(_state.context).platform;
+    if (isAppleOS(_platform)) {
+      renderEditor!.selectPositionAt(
+        from: details.globalPosition,
+        cause: SelectionChangedCause.longPress,
+      );
+    } else {
+      renderEditor!.selectWordsInRange(
+        details.globalPosition - details.offsetFromOrigin,
+        details.globalPosition,
+        SelectionChangedCause.longPress,
+      );
     }
   }
 
@@ -640,13 +616,14 @@ class _QuillEditorSelectionGestureDetectorBuilder
       return false;
     }
     final pos = renderEditor!.getPositionForOffset(details.globalPosition);
-    final result = editor!.widget.controller.document.queryChild(pos.offset);
-    if (result.node == null) {
+    final result =
+        editor!.widget.controller.document.querySegmentLeafNode(pos.offset);
+    final line = result.item1;
+    if (line == null) {
       return false;
     }
-    final line = result.node as Line;
-    final segmentResult = line.queryChild(result.offset, false);
-    if (segmentResult.node == null && line.length == 1) {
+    final segmentLeaf = result.item2;
+    if (segmentLeaf == null && line.length == 1) {
       editor!.widget.controller.updateSelection(
           TextSelection.collapsed(offset: pos.offset), ChangeSource.LOCAL);
       return true;
@@ -675,21 +652,19 @@ class _QuillEditorSelectionGestureDetectorBuilder
 
   @override
   void onSingleTapUp(TapUpDetails details) {
-    if (_state.widget.onTapUp != null) {
-      if (renderEditor != null &&
-          _state.widget.onTapUp!(details, renderEditor!.getPositionForOffset)) {
-        return;
-      }
+    if (_state.widget.onTapUp != null &&
+        renderEditor != null &&
+        _state.widget.onTapUp!(details, renderEditor!.getPositionForOffset)) {
+      return;
     }
 
     editor!.hideToolbar();
 
-    final positionSelected = _isPositionSelected(details);
-
-    if (delegate.selectionEnabled && !positionSelected) {
-      switch (Theme.of(_state.context).platform) {
-        case TargetPlatform.iOS:
-        case TargetPlatform.macOS:
+    try {
+      if (delegate.selectionEnabled && !_isPositionSelected(details)) {
+        final _platform = Theme.of(_state.context).platform;
+        if (isAppleOS(_platform) || isDesktop()) {
+          // added isDesktop() to enable extend selection in Windows platform
           switch (details.kind) {
             case PointerDeviceKind.mouse:
             case PointerDeviceKind.stylus:
@@ -713,29 +688,23 @@ class _QuillEditorSelectionGestureDetectorBuilder
             case PointerDeviceKind.unknown:
               // On macOS/iOS/iPadOS a touch tap places the cursor at the edge
               // of the word.
-              try {
-                renderEditor!
-                  ..selectWordEdge(SelectionChangedCause.tap)
-                  ..onSelectionCompleted();
-              } finally {
-                break;
-              }
+              renderEditor!
+                ..selectWordEdge(SelectionChangedCause.tap)
+                ..onSelectionCompleted();
+              break;
+            case PointerDeviceKind.trackpad:
+              // TODO: Handle this case.
+              break;
           }
-          break;
-        case TargetPlatform.android:
-        case TargetPlatform.fuchsia:
-        case TargetPlatform.linux:
-        case TargetPlatform.windows:
-          try {
-            renderEditor!
-              ..selectPosition(cause: SelectionChangedCause.tap)
-              ..onSelectionCompleted();
-          } finally {
-            break;
-          }
+        } else {
+          renderEditor!
+            ..selectPosition(cause: SelectionChangedCause.tap)
+            ..onSelectionCompleted();
+        }
       }
+    } finally {
+      _state._requestKeyboard();
     }
-    _state._requestKeyboard();
   }
 
   @override
@@ -749,23 +718,15 @@ class _QuillEditorSelectionGestureDetectorBuilder
     }
 
     if (delegate.selectionEnabled) {
-      switch (Theme.of(_state.context).platform) {
-        case TargetPlatform.iOS:
-        case TargetPlatform.macOS:
-          renderEditor!.selectPositionAt(
-            from: details.globalPosition,
-            cause: SelectionChangedCause.longPress,
-          );
-          break;
-        case TargetPlatform.android:
-        case TargetPlatform.fuchsia:
-        case TargetPlatform.linux:
-        case TargetPlatform.windows:
-          renderEditor!.selectWord(SelectionChangedCause.longPress);
-          Feedback.forLongPress(_state.context);
-          break;
-        default:
-          throw 'Invalid platform';
+      final _platform = Theme.of(_state.context).platform;
+      if (isAppleOS(_platform)) {
+        renderEditor!.selectPositionAt(
+          from: details.globalPosition,
+          cause: SelectionChangedCause.longPress,
+        );
+      } else {
+        renderEditor!.selectWord(SelectionChangedCause.longPress);
+        Feedback.forLongPress(_state.context);
       }
     }
   }
@@ -827,6 +788,7 @@ class RenderEditor extends RenderEditableContainerBox
     required TextDirection textDirection,
     required bool hasFocus,
     required this.selection,
+    required this.scrollable,
     required LayerLink startHandleLayerLink,
     required LayerLink endHandleLayerLink,
     required EdgeInsetsGeometry padding,
@@ -847,15 +809,16 @@ class RenderEditor extends RenderEditableContainerBox
         _cursorController = cursorController,
         _maxContentWidth = maxContentWidth,
         super(
-          children,
-          document.root,
-          textDirection,
-          scrollBottomInset,
-          padding,
+          children: children,
+          container: document.root,
+          textDirection: textDirection,
+          scrollBottomInset: scrollBottomInset,
+          padding: padding,
         );
 
   final CursorCont _cursorController;
   final bool floatingCursorDisabled;
+  final bool scrollable;
 
   Document document;
   TextSelection selection;
@@ -1231,17 +1194,18 @@ class RenderEditor extends RenderEditableContainerBox
   @override
   void performLayout() {
     assert(() {
-      if (!constraints.hasBoundedHeight) return true;
+      if (!scrollable || !constraints.hasBoundedHeight) return true;
       throw FlutterError.fromParts(<DiagnosticsNode>[
         ErrorSummary('RenderEditableContainerBox must have '
-            'unlimited space along its main axis.'),
+            'unlimited space along its main axis when it is scrollable.'),
         ErrorDescription('RenderEditableContainerBox does not clip or'
             ' resize its children, so it must be '
             'placed in a parent that does not constrain the main '
             'axis.'),
         ErrorHint(
             'You probably want to put the RenderEditableContainerBox inside a '
-            'RenderViewport with a matching main axis.')
+            'RenderViewport with a matching main axis or disable the '
+            'scrollable property.')
       ]);
     }());
     assert(() {
@@ -1341,7 +1305,7 @@ class RenderEditor extends RenderEditableContainerBox
   @override
   TextPosition getPositionForOffset(Offset offset) {
     final local = globalToLocal(offset);
-    final child = childAtOffset(local)!;
+    final child = childAtOffset(local);
 
     final parentData = child.parentData as BoxParentData;
     final localOffset = local - parentData.offset;
@@ -1357,8 +1321,25 @@ class RenderEditor extends RenderEditableContainerBox
   /// The offset is the distance from the top of the editor and is the minimum
   /// from the current scroll position until [selection] becomes visible.
   /// Returns null if [selection] is already visible.
+  ///
+  /// Finds the closest scroll offset that fully reveals the editing cursor.
+  ///
+  /// The `scrollOffset` parameter represents current scroll offset in the
+  /// parent viewport.
+  ///
+  /// The `offsetInViewport` parameter represents the editor's vertical offset
+  /// in the parent viewport. This value should normally be 0.0 if this editor
+  /// is the only child of the viewport or if it's the topmost child. Otherwise
+  /// it should be a positive value equal to total height of all siblings of
+  /// this editor from above it.
+  ///
+  /// Returns `null` if the cursor is currently visible.
   double? getOffsetToRevealCursor(
       double viewportHeight, double scrollOffset, double offsetInViewport) {
+    // Endpoints coordinates represents lower left or lower right corner of
+    // the selection. If we want to scroll up to reveal the caret we need to
+    // adjust the dy value by the height of the line. We also add a small margin
+    // so that the caret is not too close to the edge of the viewport.
     final endpoints = getEndpointsForSelection(selection);
 
     // when we drag the right handle, we should get the last point
@@ -1375,6 +1356,7 @@ class RenderEditor extends RenderEditableContainerBox
       }
     }
 
+    // Collapsed selection => caret
     final child = childAtPosition(selection.extent);
     const kMargin = 8.0;
 
@@ -1395,6 +1377,7 @@ class RenderEditor extends RenderEditableContainerBox
     if (dy == null) {
       return null;
     }
+    // Clamping to 0.0 so that the content does not jump unnecessarily.
     return math.max(dy, 0);
   }
 
@@ -1637,22 +1620,54 @@ class RenderEditor extends RenderEditableContainerBox
 
   // End TextLayoutMetrics implementation
 
+  QuillVerticalCaretMovementRun startVerticalCaretMovement(
+      TextPosition startPosition) {
+    return QuillVerticalCaretMovementRun._(
+      this,
+      startPosition,
+    );
+  }
+
   @override
   void systemFontsDidChange() {
     super.systemFontsDidChange();
     markNeedsLayout();
   }
+}
 
-  void debugAssertLayoutUpToDate() {
-    // no-op?
-    // this assert was added by Flutter TextEditingActionTarge
-    // so we have to comply here.
+class QuillVerticalCaretMovementRun extends Iterator<TextPosition> {
+  QuillVerticalCaretMovementRun._(
+    this._editor,
+    this._currentTextPosition,
+  );
+
+  TextPosition _currentTextPosition;
+
+  final RenderEditor _editor;
+
+  @override
+  TextPosition get current {
+    return _currentTextPosition;
+  }
+
+  @override
+  bool moveNext() {
+    _currentTextPosition = _editor.getTextPositionBelow(_currentTextPosition);
+    return true;
+  }
+
+  bool movePrevious() {
+    _currentTextPosition = _editor.getTextPositionAbove(_currentTextPosition);
+    return true;
   }
 }
 
 class EditableContainerParentData
     extends ContainerBoxParentData<RenderEditableBox> {}
 
+/// Multi-child render box of editable content.
+///
+/// Common ancestor for [RenderEditor] and [RenderEditableTextBlock].
 class RenderEditableContainerBox extends RenderBox
     with
         ContainerRenderObjectMixin<RenderEditableBox,
@@ -1660,12 +1675,14 @@ class RenderEditableContainerBox extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderEditableBox,
             EditableContainerParentData> {
   RenderEditableContainerBox(
-    List<RenderEditableBox>? children,
-    this._container,
-    this.textDirection,
-    this.scrollBottomInset,
-    this._padding,
-  ) : assert(_padding.isNonNegative) {
+      {required container_node.Container container,
+      required this.textDirection,
+      required this.scrollBottomInset,
+      required EdgeInsetsGeometry padding,
+      List<RenderEditableBox>? children})
+      : assert(padding.isNonNegative),
+        _container = container,
+        _padding = padding {
     addAll(children);
   }
 
@@ -1711,7 +1728,7 @@ class RenderEditableContainerBox extends RenderBox
   RenderEditableBox childAtPosition(TextPosition position) {
     assert(firstChild != null);
 
-    final targetNode = _container.queryChild(position.offset, false).node;
+    final targetNode = container.queryChild(position.offset, false).node;
 
     var targetChild = firstChild;
     while (targetChild != null) {
@@ -1735,15 +1752,20 @@ class RenderEditableContainerBox extends RenderBox
     markNeedsLayout();
   }
 
-  RenderEditableBox? childAtOffset(Offset offset) {
+  /// Returns child of this container located at the specified local `offset`.
+  ///
+  /// If `offset` is above this container (offset.dy is negative) returns
+  /// the first child. Likewise, if `offset` is below this container then
+  /// returns the last child.
+  RenderEditableBox childAtOffset(Offset offset) {
     assert(firstChild != null);
     resolvePadding();
 
     if (offset.dy <= _resolvedPadding!.top) {
-      return firstChild;
+      return firstChild!;
     }
     if (offset.dy >= size.height - _resolvedPadding!.bottom) {
-      return lastChild;
+      return lastChild!;
     }
 
     var child = firstChild;
@@ -1756,7 +1778,7 @@ class RenderEditableContainerBox extends RenderBox
       dy += child.size.height;
       child = childAfter(child);
     }
-    throw 'No child';
+    throw StateError('No child at offset $offset.');
   }
 
   @override

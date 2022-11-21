@@ -9,6 +9,7 @@ class HistoryButton extends StatefulWidget {
     required this.undo,
     this.iconSize = kDefaultIconSize,
     this.iconTheme,
+    this.afterButtonPressed,
     Key? key,
   }) : super(key: key);
 
@@ -17,6 +18,7 @@ class HistoryButton extends StatefulWidget {
   final bool undo;
   final QuillController controller;
   final QuillIconTheme? iconTheme;
+  final VoidCallback? afterButtonPressed;
 
   @override
   _HistoryButtonState createState() => _HistoryButtonState();
@@ -42,7 +44,9 @@ class _HistoryButtonState extends State<HistoryButton> {
       size: widget.iconSize * 1.77,
       icon: Icon(widget.icon, size: widget.iconSize, color: _iconColor),
       fillColor: fillColor,
+      borderRadius: widget.iconTheme?.borderRadius ?? 2,
       onPressed: _changeHistory,
+      afterPressed: widget.afterButtonPressed,
     );
   }
 

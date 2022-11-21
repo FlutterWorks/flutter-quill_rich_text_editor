@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:tuple/tuple.dart';
 
-import '../../flutter_quill.dart';
-import '../../models/documents/style.dart';
+import '../models/documents/attribute.dart';
+import '../models/documents/style.dart';
+import '../utils/platform.dart';
+import 'style_widgets/checkbox_point.dart';
 
 class QuillStyles extends InheritedWidget {
   const QuillStyles({
@@ -189,27 +191,19 @@ class DefaultStyles {
     final baseStyle = defaultTextStyle.style.copyWith(
       fontSize: 16,
       height: 1.3,
+      decoration: TextDecoration.none,
     );
     const baseSpacing = Tuple2<double, double>(6, 0);
     String fontFamily;
-    switch (themeData.platform) {
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-        fontFamily = 'Menlo';
-        break;
-      case TargetPlatform.android:
-      case TargetPlatform.fuchsia:
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        fontFamily = 'Roboto Mono';
-        break;
-      default:
-        throw UnimplementedError();
+    if (isAppleOS(themeData.platform)) {
+      fontFamily = 'Menlo';
+    } else {
+      fontFamily = 'Roboto Mono';
     }
 
     final inlineCodeStyle = TextStyle(
       fontSize: 14,
-      color: themeData.colorScheme.primaryVariant.withOpacity(0.8),
+      color: themeData.colorScheme.primary.withOpacity(0.8),
       fontFamily: fontFamily,
     );
 
@@ -220,6 +214,7 @@ class DefaultStyles {
               color: defaultTextStyle.style.color!.withOpacity(0.70),
               height: 1.15,
               fontWeight: FontWeight.w300,
+              decoration: TextDecoration.none,
             ),
             const Tuple2(16, 0),
             const Tuple2(0, 0),
@@ -230,6 +225,7 @@ class DefaultStyles {
               color: defaultTextStyle.style.color!.withOpacity(0.70),
               height: 1.15,
               fontWeight: FontWeight.normal,
+              decoration: TextDecoration.none,
             ),
             const Tuple2(8, 0),
             const Tuple2(0, 0),
@@ -240,6 +236,7 @@ class DefaultStyles {
               color: defaultTextStyle.style.color!.withOpacity(0.70),
               height: 1.25,
               fontWeight: FontWeight.w500,
+              decoration: TextDecoration.none,
             ),
             const Tuple2(8, 0),
             const Tuple2(0, 0),
@@ -248,7 +245,7 @@ class DefaultStyles {
             baseStyle, const Tuple2(0, 0), const Tuple2(0, 0), null),
         bold: const TextStyle(fontWeight: FontWeight.bold),
         italic: const TextStyle(fontStyle: FontStyle.italic),
-        small: const TextStyle(fontSize: 12, color: Colors.black45),
+        small: const TextStyle(fontSize: 12),
         underline: const TextStyle(decoration: TextDecoration.underline),
         strikeThrough: const TextStyle(decoration: TextDecoration.lineThrough),
         inlineCode: InlineCodeStyle(

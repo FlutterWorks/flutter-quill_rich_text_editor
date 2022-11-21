@@ -1,13 +1,14 @@
 import 'dart:math' as math;
 
 import 'package:collection/collection.dart';
+import 'package:tuple/tuple.dart';
 
 import '../../quill_delta.dart';
 import '../attribute.dart';
 import '../style.dart';
 import 'block.dart';
 import 'container.dart';
-import 'embed.dart';
+import 'embeddable.dart';
 import 'leaf.dart';
 import 'node.dart';
 
@@ -128,12 +129,17 @@ class Line extends Container<Leaf?> {
     final isLineFormat = (index + local == thisLength) && local == 1;
 
     if (isLineFormat) {
-      assert(style.values.every((attr) => attr.scope == AttributeScope.BLOCK),
+      assert(
+          style.values.every((attr) =>
+              attr.scope == AttributeScope.BLOCK ||
+              attr.scope == AttributeScope.IGNORE),
           'It is not allowed to apply inline attributes to line itself.');
       _format(style);
     } else {
       // Otherwise forward to children as it's an inline format update.
-      assert(style.values.every((attr) => attr.scope == AttributeScope.INLINE));
+      assert(style.values.every((attr) =>
+          attr.scope == AttributeScope.INLINE ||
+          attr.scope == AttributeScope.IGNORE));
       assert(index + local != thisLength);
       super.retain(index, local, style);
     }
@@ -267,6 +273,7 @@ class Line extends Container<Leaf?> {
       unlink();
       block.insertAfter(this);
     } else {
+      /// need to split this block into two as [line] is in the middle.
       final before = block.clone() as Block;
       block.insertBefore(before);
 
@@ -333,6 +340,8 @@ class Line extends Container<Leaf?> {
   ///   every line within this range (partially included lines are counted).
   /// - inline attribute X is included in the result only if it exists
   ///   for every character within this range (line-break characters excluded).
+  ///
+  /// In essence, it is INTERSECTION of each individual segment's styles
   Style collectStyle(int offset, int len) {
     final local = math.min(length - offset, len);
     var result = Style();
@@ -380,7 +389,44 @@ class Line extends Container<Leaf?> {
     return result;
   }
 
+  /// Returns each node segment's offset in selection
+  /// with its corresponding style as a list
+  List<Tuple2<int, Style>> collectAllIndividualStyles(int offset, int len,
+      {int beg = 0}) {
+    final local = math.min(length - offset, len);
+    final result = <Tuple2<int, Style>>[];
+
+    final data = queryChild(offset, true);
+    var node = data.node as Leaf?;
+    if (node != null) {
+      var pos = 0;
+      if (node is Text) {
+        pos = node.length - data.offset;
+        result.add(Tuple2(beg, node.style));
+      }
+      while (!node!.isLast && pos < local) {
+        node = node.next as Leaf;
+        if (node is Text) {
+          result.add(Tuple2(pos + beg, node.style));
+          pos += node.length;
+        }
+      }
+    }
+
+    // TODO: add line style and parent's block style
+
+    final remaining = len - local;
+    if (remaining > 0) {
+      final rest =
+          nextLine!.collectAllIndividualStyles(0, remaining, beg: local);
+      result.addAll(rest);
+    }
+
+    return result;
+  }
+
   /// Returns all styles for any character within the specified text range.
+  /// In essence, it is UNION of each individual segment's styles
   List<Style> collectAllStyles(int offset, int len) {
     final local = math.min(length - offset, len);
     final result = <Style>[];
@@ -410,5 +456,56 @@ class Line extends Container<Leaf?> {
     }
 
     return result;
+  }
+
+  /// Returns plain text within the specified text range.
+  String getPlainText(int offset, int len) {
+    final plainText = StringBuffer();
+    _getPlainText(offset, len, plainText);
+    return plainText.toString();
+  }
+
+  int _getNodeText(Leaf node, StringBuffer buffer, int offset, int remaining) {
+    final text = node.toPlainText();
+    if (text == Embed.kObjectReplacementCharacter) {
+      return remaining - node.length;
+    }
+
+    final end = math.min(offset + remaining, text.length);
+    buffer.write(text.substring(offset, end));
+    return remaining - (end - offset);
+  }
+
+  int _getPlainText(int offset, int len, StringBuffer plainText) {
+    var _len = len;
+    final data = queryChild(offset, true);
+    var node = data.node as Leaf?;
+
+    while (_len > 0) {
+      if (node == null) {
+        // blank line
+        plainText.write('\n');
+        _len -= 1;
+      } else {
+        _len = _getNodeText(node, plainText, offset - node.offset, _len);
+
+        while (!node!.isLast && _len > 0) {
+          node = node.next as Leaf;
+          _len = _getNodeText(node, plainText, 0, _len);
+        }
+
+        if (_len > 0) {
+          // end of this line
+          plainText.write('\n');
+          _len -= 1;
+        }
+      }
+
+      if (_len > 0) {
+        _len = nextLine!._getPlainText(0, _len, plainText);
+      }
+    }
+
+    return _len;
   }
 }

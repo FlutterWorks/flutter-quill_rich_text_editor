@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-Color stringToColor(String? s) {
+Color stringToColor(String? s, [Color? originalColor]) {
   switch (s) {
     case 'transparent':
       return Colors.transparent;
@@ -110,6 +110,11 @@ Color stringToColor(String? s) {
     final arr = s.split(',').map((e) => e.trim()).toList();
     return Color.fromRGBO(int.parse(arr[0]), int.parse(arr[1]),
         int.parse(arr[2]), double.parse(arr[3]));
+  }
+
+  // TODO: take care of "color": "inherit"
+  if (s.startsWith('inherit')) {
+    return originalColor ?? Colors.black;
   }
 
   if (!s.startsWith('#')) {

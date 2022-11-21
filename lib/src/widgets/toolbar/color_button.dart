@@ -20,6 +20,7 @@ class ColorButton extends StatefulWidget {
     required this.background,
     this.iconSize = kDefaultIconSize,
     this.iconTheme,
+    this.afterButtonPressed,
     Key? key,
   }) : super(key: key);
 
@@ -28,6 +29,7 @@ class ColorButton extends StatefulWidget {
   final bool background;
   final QuillController controller;
   final QuillIconTheme? iconTheme;
+  final VoidCallback? afterButtonPressed;
 
   @override
   _ColorButtonState createState() => _ColorButtonState();
@@ -37,7 +39,7 @@ class _ColorButtonState extends State<ColorButton> {
   late bool _isToggledColor;
   late bool _isToggledBackground;
   late bool _isWhite;
-  late bool _isWhitebackground;
+  late bool _isWhiteBackground;
 
   Style get _selectionStyle => widget.controller.getSelectionStyle();
 
@@ -49,7 +51,7 @@ class _ColorButtonState extends State<ColorButton> {
           widget.controller.getSelectionStyle().attributes);
       _isWhite = _isToggledColor &&
           _selectionStyle.attributes['color']!.value == '#ffffff';
-      _isWhitebackground = _isToggledBackground &&
+      _isWhiteBackground = _isToggledBackground &&
           _selectionStyle.attributes['background']!.value == '#ffffff';
     });
   }
@@ -61,7 +63,7 @@ class _ColorButtonState extends State<ColorButton> {
     _isToggledBackground = _getIsToggledBackground(_selectionStyle.attributes);
     _isWhite = _isToggledColor &&
         _selectionStyle.attributes['color']!.value == '#ffffff';
-    _isWhitebackground = _isToggledBackground &&
+    _isWhiteBackground = _isToggledBackground &&
         _selectionStyle.attributes['background']!.value == '#ffffff';
     widget.controller.addListener(_didChangeEditingValue);
   }
@@ -85,7 +87,7 @@ class _ColorButtonState extends State<ColorButton> {
           _getIsToggledBackground(_selectionStyle.attributes);
       _isWhite = _isToggledColor &&
           _selectionStyle.attributes['color']!.value == '#ffffff';
-      _isWhitebackground = _isToggledBackground &&
+      _isWhiteBackground = _isToggledBackground &&
           _selectionStyle.attributes['background']!.value == '#ffffff';
     }
   }
@@ -104,7 +106,7 @@ class _ColorButtonState extends State<ColorButton> {
         : (widget.iconTheme?.iconUnselectedColor ?? theme.iconTheme.color);
 
     final iconColorBackground =
-        _isToggledBackground && widget.background && !_isWhitebackground
+        _isToggledBackground && widget.background && !_isWhiteBackground
             ? stringToColor(_selectionStyle.attributes['background']!.value)
             : (widget.iconTheme?.iconUnselectedColor ?? theme.iconTheme.color);
 
@@ -112,7 +114,7 @@ class _ColorButtonState extends State<ColorButton> {
         ? stringToColor('#ffffff')
         : (widget.iconTheme?.iconUnselectedFillColor ?? theme.canvasColor);
     final fillColorBackground =
-        _isToggledBackground && widget.background && _isWhitebackground
+        _isToggledBackground && widget.background && _isWhiteBackground
             ? stringToColor('#ffffff')
             : (widget.iconTheme?.iconUnselectedFillColor ?? theme.canvasColor);
 
@@ -124,7 +126,9 @@ class _ColorButtonState extends State<ColorButton> {
           size: widget.iconSize,
           color: widget.background ? iconColorBackground : iconColor),
       fillColor: widget.background ? fillColorBackground : fillColor,
+      borderRadius: widget.iconTheme?.borderRadius ?? 2,
       onPressed: _showColorPicker,
+      afterPressed: widget.afterButtonPressed,
     );
   }
 
