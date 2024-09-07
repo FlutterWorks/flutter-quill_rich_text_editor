@@ -1,6 +1,7 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:flutter_quill/flutter_quill_test.dart';
+import 'package:flutter_quill_test/flutter_quill_test.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -12,31 +13,39 @@ void main() {
           (tester) async {
         const tooltip = 'custom button';
 
-        await tester.pumpWidget(MaterialApp(
-            home: QuillToolbar.basic(
-          showRedo: false,
-          controller: QuillController.basic(),
-          customButtons: [const QuillCustomButton(tooltip: tooltip)],
-        )));
+        final controller = QuillController.basic();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: QuillSimpleToolbar(
+                controller: controller,
+                configurations: const QuillSimpleToolbarConfigurations(
+                  showRedo: false,
+                  customButtons: [
+                    QuillToolbarCustomButtonOptions(
+                      tooltip: tooltip,
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
 
         final builtinFinder = find.descendant(
-            of: find.byType(HistoryButton),
-            matching: find.byType(QuillIconButton),
-            matchRoot: true);
+          of: find.byType(QuillToolbarHistoryButton),
+          matching: find.byType(QuillToolbarIconButton),
+          matchRoot: true,
+        );
         expect(builtinFinder, findsOneWidget);
-        final builtinButton =
-            builtinFinder.evaluate().first.widget as QuillIconButton;
 
         final customFinder = find.descendant(
             of: find.byType(QuillToolbar),
             matching: find.byWidgetPredicate((widget) =>
-                widget is QuillIconButton && widget.tooltip == tooltip),
+                widget is QuillToolbarIconButton && widget.tooltip == tooltip),
             matchRoot: true);
         expect(customFinder, findsOneWidget);
-        final customButton =
-            customFinder.evaluate().first.widget as QuillIconButton;
-
-        expect(customButton.fillColor, equals(builtinButton.fillColor));
       });
     });
 
@@ -46,7 +55,9 @@ void main() {
 
       setUp(() {
         controller = QuillController.basic();
-        editor = QuillEditor.basic(controller: controller, readOnly: false);
+        editor = QuillEditor.basic(
+          controller: controller,
+        );
       });
 
       tearDown(() {
@@ -55,7 +66,13 @@ void main() {
 
       testWidgets('Refocus editor after controller clears document',
           (tester) async {
-        await tester.pumpWidget(MaterialApp(home: Column(children: [editor])));
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Column(
+              children: [editor],
+            ),
+          ),
+        );
         await tester.quillEnterText(find.byType(QuillEditor), 'test\n');
 
         editor.focusNode.unfocus();
@@ -68,7 +85,11 @@ void main() {
 
       testWidgets('Refocus editor after removing block attribute',
           (tester) async {
-        await tester.pumpWidget(MaterialApp(home: Column(children: [editor])));
+        await tester.pumpWidget(MaterialApp(
+          home: Column(
+            children: [editor],
+          ),
+        ));
         await tester.quillEnterText(find.byType(QuillEditor), 'test\n');
 
         controller.formatSelection(Attribute.ul);
@@ -81,15 +102,76 @@ void main() {
       });
 
       testWidgets('Tap checkbox in unfocused editor', (tester) async {
-        await tester.pumpWidget(MaterialApp(home: Column(children: [editor])));
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Column(
+              children: [editor],
+            ),
+          ),
+        );
         await tester.quillEnterText(find.byType(QuillEditor), 'test\n');
 
         controller.formatSelection(Attribute.unchecked);
         editor.focusNode.unfocus();
         await tester.pump();
-        await tester.tap(find.byType(CheckboxPoint));
+        await tester.tap(find.byType(QuillEditorCheckboxPoint));
         expect(tester.takeException(), isNull);
       });
     });
+  });
+
+  group('1742 - Disable context menu after selection for desktop platform', () {
+    late QuillController controller;
+
+    setUp(() {
+      controller = QuillController.basic();
+    });
+
+    tearDown(() {
+      controller.dispose();
+    });
+
+    for (final device in [PointerDeviceKind.mouse, PointerDeviceKind.touch]) {
+      testWidgets(
+          '1742 - Disable context menu after selection for desktop platform $device',
+          (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: QuillEditor(
+              focusNode: FocusNode(),
+              scrollController: ScrollController(),
+              controller: controller,
+              configurations: const QuillEditorConfigurations(
+                autoFocus: true,
+                expands: true,
+              ),
+            ),
+          ),
+        );
+        if (device == PointerDeviceKind.mouse) {
+          expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+          // Long press to show menu
+          await tester.longPress(find.byType(QuillEditor), kind: device);
+          await tester.pumpAndSettle();
+
+          // Verify custom widget not shows
+          expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+
+          await tester.tap(find.byType(QuillEditor),
+              buttons: kSecondaryButton, kind: device);
+          await tester.pumpAndSettle();
+
+          // Verify custom widget shows
+          expect(find.byType(AdaptiveTextSelectionToolbar), findsAny);
+        } else {
+          // Long press to show menu
+          await tester.longPress(find.byType(QuillEditor), kind: device);
+          await tester.pumpAndSettle();
+
+          // Verify custom widget shows
+          expect(find.byType(AdaptiveTextSelectionToolbar), findsAny);
+        }
+      });
+    }
   });
 }

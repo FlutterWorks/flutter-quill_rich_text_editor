@@ -1,106 +1,64 @@
 library flutter_quill_extensions;
 
-import 'package:flutter/material.dart';
-import 'package:flutter_quill/flutter_quill.dart';
+// ignore: implementation_imports
+import 'package:flutter_quill/src/editor_toolbar_controller_shared/clipboard/clipboard_service_provider.dart';
+import 'package:meta/meta.dart' show immutable;
 
-import 'embeds/builders.dart';
-import 'embeds/embed_types.dart';
-import 'embeds/toolbar/camera_button.dart';
-import 'embeds/toolbar/formula_button.dart';
-import 'embeds/toolbar/image_button.dart';
-import 'embeds/toolbar/video_button.dart';
+import 'src/editor_toolbar_controller_shared/clipboard/super_clipboard_service.dart';
 
-export 'embeds/embed_types.dart';
-export 'embeds/toolbar/camera_button.dart';
-export 'embeds/toolbar/formula_button.dart';
-export 'embeds/toolbar/image_button.dart';
-export 'embeds/toolbar/image_video_utils.dart';
-export 'embeds/toolbar/media_button.dart';
-export 'embeds/toolbar/video_button.dart';
-export 'embeds/utils.dart';
+export 'src/common/extensions/controller_ext.dart';
+export 'src/common/utils/utils.dart';
+export 'src/editor/image/image_embed.dart';
+export 'src/editor/image/image_embed_types.dart';
+export 'src/editor/image/image_web_embed.dart';
+export 'src/editor/image/models/image_configurations.dart';
+export 'src/editor/image/models/image_web_configurations.dart';
+// TODO: Remove Simple Spell Checker Service
+export 'src/editor/spell_checker/simple_spell_checker_service.dart';
+export 'src/editor/table/table_cell_embed.dart';
+export 'src/editor/table/table_embed.dart';
+export 'src/editor/table/table_models.dart';
+export 'src/editor/video/models/video_configurations.dart';
+export 'src/editor/video/models/video_web_configurations.dart';
+export 'src/editor/video/models/youtube_video_support_mode.dart';
+export 'src/editor/video/video_embed.dart';
+export 'src/editor/video/video_web_embed.dart';
+export 'src/editor_toolbar_shared/shared_configurations.dart';
+export 'src/flutter_quill_embeds.dart';
+export 'src/toolbar/camera/camera_button.dart';
+export 'src/toolbar/camera/models/camera_configurations.dart';
+export 'src/toolbar/formula/formula_button.dart';
+export 'src/toolbar/formula/models/formula_configurations.dart';
+export 'src/toolbar/image/image_button.dart';
+export 'src/toolbar/image/models/image_configurations.dart';
+export 'src/toolbar/table/models/table_configurations.dart';
+export 'src/toolbar/table/table_button.dart';
+export 'src/toolbar/video/models/video.dart';
+export 'src/toolbar/video/models/video_configurations.dart';
+export 'src/toolbar/video/video_button.dart';
 
-class FlutterQuillEmbeds {
-  static List<EmbedBuilder> builders({
-    void Function(GlobalKey videoContainerKey)? onVideoInit,
-  }) =>
-      [
-        ImageEmbedBuilder(),
-        VideoEmbedBuilder(onVideoInit: onVideoInit),
-        FormulaEmbedBuilder(),
-      ];
+@immutable
+class FlutterQuillExtensions {
+  const FlutterQuillExtensions._();
 
-  static List<EmbedBuilder> webBuilders() => [
-        ImageEmbedBuilderWeb(),
-      ];
+  @Deprecated(
+    '''
+    Spell checker feature has been removed from the package to make it optional and 
+    reduce bundle size. See issue https://github.com/singerdmx/flutter-quill/issues/2142
+    for more details.
 
-  static List<EmbedButtonBuilder> buttons({
-    bool showImageButton = true,
-    bool showVideoButton = true,
-    bool showCameraButton = true,
-    bool showFormulaButton = false,
-    String? imageButtonTooltip,
-    String? videoButtonTooltip,
-    String? cameraButtonTooltip,
-    String? formulaButtonTooltip,
-    OnImagePickCallback? onImagePickCallback,
-    OnVideoPickCallback? onVideoPickCallback,
-    MediaPickSettingSelector? mediaPickSettingSelector,
-    MediaPickSettingSelector? cameraPickSettingSelector,
-    FilePickImpl? filePickImpl,
-    WebImagePickImpl? webImagePickImpl,
-    WebVideoPickImpl? webVideoPickImpl,
-  }) =>
-      [
-        if (showImageButton)
-          (controller, toolbarIconSize, iconTheme, dialogTheme) => ImageButton(
-                icon: Icons.image,
-                iconSize: toolbarIconSize,
-                tooltip: imageButtonTooltip,
-                controller: controller,
-                onImagePickCallback: onImagePickCallback,
-                filePickImpl: filePickImpl,
-                webImagePickImpl: webImagePickImpl,
-                mediaPickSettingSelector: mediaPickSettingSelector,
-                iconTheme: iconTheme,
-                dialogTheme: dialogTheme,
-              ),
-        if (showVideoButton)
-          (controller, toolbarIconSize, iconTheme, dialogTheme) => VideoButton(
-                icon: Icons.movie_creation,
-                iconSize: toolbarIconSize,
-                tooltip: videoButtonTooltip,
-                controller: controller,
-                onVideoPickCallback: onVideoPickCallback,
-                filePickImpl: filePickImpl,
-                webVideoPickImpl: webImagePickImpl,
-                mediaPickSettingSelector: mediaPickSettingSelector,
-                iconTheme: iconTheme,
-                dialogTheme: dialogTheme,
-              ),
-        if ((onImagePickCallback != null || onVideoPickCallback != null) &&
-            showCameraButton)
-          (controller, toolbarIconSize, iconTheme, dialogTheme) => CameraButton(
-                icon: Icons.photo_camera,
-                iconSize: toolbarIconSize,
-                tooltip: cameraButtonTooltip,
-                controller: controller,
-                onImagePickCallback: onImagePickCallback,
-                onVideoPickCallback: onVideoPickCallback,
-                filePickImpl: filePickImpl,
-                webImagePickImpl: webImagePickImpl,
-                webVideoPickImpl: webVideoPickImpl,
-                cameraPickSettingSelector: cameraPickSettingSelector,
-                iconTheme: iconTheme,
-              ),
-        if (showFormulaButton)
-          (controller, toolbarIconSize, iconTheme, dialogTheme) =>
-              FormulaButton(
-                icon: Icons.functions,
-                iconSize: toolbarIconSize,
-                tooltip: formulaButtonTooltip,
-                controller: controller,
-                iconTheme: iconTheme,
-                dialogTheme: dialogTheme,
-              )
-      ];
+    Calling this function will no longer activate the feature.
+    ''',
+  )
+  static void useSpellCheckerService(String language) {
+    // This feature has been removed from the package.
+    // See https://github.com/singerdmx/flutter-quill/issues/2142
+  }
+
+  /// Override default implementation of [ClipboardServiceProvider.instance]
+  /// to allow `flutter_quill` package to use `super_clipboard` plugin
+  /// to support rich text features, gif and images.
+  static void useSuperClipboardPlugin() {
+    ClipboardServiceProvider.setInstance(SuperClipboardService());
+  }
 }
